@@ -1,0 +1,7 @@
+﻿iprodif.db
+__pycache__/
+*.pyc
+static/uploads/*
+!static/uploads/.gitkeep
+fix_*.py
+.env

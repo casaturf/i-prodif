@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Admin - Utilisateurs{% endblock %}
+
+{% block content %}
+<div class="main">
+    <div class="section-header">
+        <h2 class="section-title">Gestion des utilisateurs ({{ users|length }})</h2>
+        <a href="{{ url_for('admin_dashboard') }}" class="section-link">&larr; Dashboard</a>
+    </div>
+
+    <div class="admin-table">
+        {% for u in users %}
+        <div class="admin-row" style="padding:12px 16px">
+            <div class="avatar" style="background:{{ u.avatar_color }};width:32px;height:32px;font-size:0.8rem">{{ u.initial }}</div>
+            <div style="flex:1">
+                <strong>{{ u.username }}</strong>
+                {% if u.is_admin %}<span style="color:#279FF5;font-size:0.75rem">[ADMIN]</span>{% endif %}
+                {% if u.is_pro %}<span class="badge-pro" style="font-size:0.65rem">PRO</span>{% endif %}
+                {% if u.is_banned %}<span style="color:#e63946;font-size:0.75rem">[BANNI]</span>{% endif %}
+                <div style="font-size:0.8rem;color:#999">{{ u.email }} | {{ u.city or 'N/A' }} | {{ u.created_at.strftime('%d/%m/%Y') }} | {{ u.active_annonces_count }} annonces</div>
+            </div>
+            <div style="display:flex;gap:6px">
+                {% if not u.is_admin %}
+                <form method="POST" action="{{ url_for('admin_toggle_ban', id=u.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="card-action-btn" style="color:{{ '#22c55e' if u.is_banned else '#e63946' }}">
+                        {{ 'Debannir' if u.is_banned else 'Bannir' }}
+                    </button>
+                </form>
+                <form method="POST" action="{{ url_for('admin_toggle_pro', id=u.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="card-action-btn" style="color:#FF9800">
+                        {{ 'Retirer Pro' if u.is_pro else 'Passer Pro' }}
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

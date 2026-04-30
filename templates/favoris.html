@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Mes favoris{% endblock %}
+
+{% block content %}
+<div class="main">
+    <div class="section-header">
+        <h2 class="section-title">Mes favoris</h2>
+    </div>
+
+    {% if annonces %}
+    <div class="cards-grid">
+        {% for annonce in annonces %}
+        <a href="{{ url_for('annonce_detail', id=annonce.id) }}" class="card">
+            <div class="card-img">
+                {% if annonce.photo1 %}
+                    <img src="{{ url_for('static', filename='uploads/' + annonce.photo1) }}" alt="{{ annonce.title }}">
+                {% else %}
+                    {{ annonce.category.icon }}
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="card-seller">
+                    <div class="card-seller-avatar" style="background:{{ annonce.author.avatar_color }}">{{ annonce.author.initial }}</div>
+                    <span class="card-seller-name">{{ annonce.author.username }}</span>
+                </div>
+                <div class="card-title">{{ annonce.title }}</div>
+                <div class="card-price">{{ annonce.price_display }}</div>
+                <div class="card-location"><span>{{ annonce.city }}</span></div>
+                <div class="card-date">{{ annonce.time_ago }}</div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div style="text-align:center;padding:60px 20px;color:var(--text-muted)">
+        <div style="font-size:3rem;margin-bottom:10px">&#9825;</div>
+        <p>Aucun favori pour le moment.</p>
+        <p style="font-size:0.85rem;margin-top:8px">Ajoutez des annonces en favoris depuis leur page de detail.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Modifier l\'annonce' if edit else 'Déposer une annonce' }}{% endblock %}
+
+{% block content %}
+<div class="main">
+    <div class="form-page" style="min-height:auto;padding:20px 0">
+        <div class="form-container" style="max-width:640px">
+            <h2>{{ '✏️ Modifier l\'annonce' if edit else '📝 Déposer une annonce' }}</h2>
+            <p class="subtitle">{{ 'Mettez à jour votre annonce' if edit else 'Remplissez les informations de votre annonce' }}</p>
+
+            <form method="POST" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="form-group">
+                    <label for="title">Titre de l'annonce *</label>
+                    <input type="text" id="title" name="title" placeholder="Ex: iPhone 15 Pro Max 256Go" 
+                           value="{{ annonce.title if edit else '' }}" required maxlength="200">
+                </div>
+
+                <div class="form-group">
+                    <label for="category_id">Catégorie *</label>
+                    <select id="category_id" name="category_id" required>
+                        <option value="">— Choisir une catégorie —</option>
+                        {% for cat in categories %}
+                            <option value="{{ cat.id }}" {{ 'selected' if edit and annonce.category_id == cat.id }}>
+                                {{ cat.icon }} {{ cat.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="description">Description *</label>
+                    <textarea id="description" name="description" placeholder="Décrivez votre article en détail : état, caractéristiques, raison de la vente..." required>{{ annonce.description if edit else '' }}</textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="price">Prix (DH) *</label>
+                        <input type="number" id="price" name="price" placeholder="0" min="0" step="0.01"
+                               value="{{ annonce.price if edit else '' }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="city">Ville *</label>
+                        <input type="text" id="city" name="city" placeholder="Casablanca"
+                               value="{{ annonce.city if edit else '' }}" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="state">État</label>
+                        <select id="state" name="state">
+                            {% for s in ['Neuf', 'Très bon état', 'Bon état', 'État correct', 'Pour pièces'] %}
+                                <option value="{{ s }}" {{ 'selected' if edit and annonce.state == s }}>{{ s }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>&nbsp;</label>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="delivery" name="delivery" {{ 'checked' if edit and annonce.delivery }}>
+                            <label for="delivery" class="checkbox-label">🚚 Livraison possible</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Photos (max 3, formats: JPG, PNG, WebP)</label>
+                    <div class="photo-upload-grid">
+                        <div class="photo-upload-box">
+                            <input type="file" id="photo1" name="photo1" accept="image/*" onchange="previewImg(this, 'preview1')">
+                            <label for="photo1" class="photo-upload-label">
+                                <div id="preview1" class="photo-preview">
+                                    {% if edit and annonce.photo1 %}
+                                        <img src="{{ url_for('static', filename='uploads/' + annonce.photo1) }}">
+                                    {% else %}
+                                        <span>📷</span>
+                                        <small>Photo 1</small>
+                                    {% endif %}
+                                </div>
+                            </label>
+                        </div>
+                        <div class="photo-upload-box">
+                            <input type="file" id="photo2" name="photo2" accept="image/*" onchange="previewImg(this, 'preview2')">
+                            <label for="photo2" class="photo-upload-label">
+                                <div id="preview2" class="photo-preview">
+                                    {% if edit and annonce.photo2 %}
+                                        <img src="{{ url_for('static', filename='uploads/' + annonce.photo2) }}">
+                                    {% else %}
+                                        <span>📷</span>
+                                        <small>Photo 2</small>
+                                    {% endif %}
+                                </div>
+                            </label>
+                        </div>
+                        <div class="photo-upload-box">
+                            <input type="file" id="photo3" name="photo3" accept="image/*" onchange="previewImg(this, 'preview3')">
+                            <label for="photo3" class="photo-upload-label">
+                                <div id="preview3" class="photo-preview">
+                                    {% if edit and annonce.photo3 %}
+                                        <img src="{{ url_for('static', filename='uploads/' + annonce.photo3) }}">
+                                    {% else %}
+                                        <span>📷</span>
+                                        <small>Photo 3</small>
+                                    {% endif %}
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary form-submit">
+                    {{ '✏️ Enregistrer les modifications' if edit else '🚀 Publier l\'annonce' }}
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function previewImg(input, previewId) {
+    const preview = document.getElementById(previewId);
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = '<img src="' + e.target.result + '">';
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+</script>
+{% endblock %}

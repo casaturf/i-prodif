@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}{{ seller.username }} - Vendeur{% endblock %}
+
+{% block content %}
+<div class="main">
+    <div class="profile-header">
+        <div class="avatar profile-avatar" style="background:{{ seller.avatar_color }}">{{ seller.initial }}</div>
+        <div class="profile-info">
+            <h2>{{ seller.username }}
+                {% if seller.is_pro %}<span class="badge-pro">PRO</span>{% endif %}
+            </h2>
+            {% if seller.city %}<p>{{ seller.city }}</p>{% endif %}
+            {% if seller.bio %}<p style="margin-top:4px">{{ seller.bio }}</p>{% endif %}
+            <div class="profile-stats">
+                <div class="stat"><strong>{{ seller.active_annonces_count }}</strong> annonce(s)</div>
+                <div class="stat">Membre depuis <strong>{{ seller.created_at.strftime('%d/%m/%Y') }}</strong></div>
+                <div class="stat">
+                    {% if seller.avg_rating > 0 %}
+                        <strong>{{ seller.avg_rating }}/5</strong> ({{ seller.review_count }} avis)
+                    {% else %}
+                        Aucun avis
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Annonces -->
+    <div class="section-header"><h2 class="section-title">Annonces de {{ seller.username }}</h2></div>
+    {% if annonces %}
+    <div class="cards-grid">
+        {% for annonce in annonces %}
+        <a href="{{ url_for('annonce_detail', id=annonce.id) }}" class="card">
+            <div class="card-img">
+                {% if annonce.photo1 %}<img src="{{ url_for('static', filename='uploads/' + annonce.photo1) }}">
+                {% else %}{{ annonce.category.icon }}{% endif %}
+            </div>
+            <div class="card-body">
+                <div class="card-title">{{ annonce.title }}</div>
+                <div class="card-price">{{ annonce.price_display }}</div>
+                <div class="card-location"><span>{{ annonce.city }}</span></div>
+                {% if annonce.currently_boosted %}<span class="card-badge badge-boost">Boost</span>{% endif %}
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p style="color:var(--text-muted);padding:20px 0">Aucune annonce active.</p>
+    {% endif %}
+
+    <!-- Avis -->
+    <div style="margin-top:40px">
+        <div class="section-header"><h2 class="section-title">Avis ({{ reviews|length }})</h2></div>
+
+        {% if can_review %}
+        <div class="review-form-box">
+            <h4>Laisser un avis</h4>
+            <form method="POST" action="{{ url_for('add_review', user_id=seller.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="rating-select">
+                    {% for i in range(1, 6) %}
+                        <label class="star-label">
+                            <input type="radio" name="rating" value="{{ i }}" required>
+                            <span class="star">&#9733;</span>
+                        </label>
+                    {% endfor %}
+                </div>
+                <div class="form-group" style="margin-top:10px">
+                    <textarea name="comment" placeholder="Votre avis..." rows="3" style="width:100%;padding:10px;border:1px solid #e0e0e0;border-radius:6px;font-family:inherit;font-size:0.9rem"></textarea>
+                </div>
+                <button type="submit" class="form-submit" style="max-width:200px">Publier l'avis</button>
+            </form>
+        </div>
+        {% endif %}
+
+        {% if reviews %}
+        <div class="reviews-list">
+            {% for review in reviews %}
+            <div class="review-item">
+                <div class="review-header">
+                    <div class="avatar" style="background:{{ review.reviewer.avatar_color }};width:32px;height:32px;font-size:0.8rem">{{ review.reviewer.initial }}</div>
+                    <strong>{{ review.reviewer.username }}</strong>
+                    <span class="review-stars">
+                        {% for i in range(review.rating) %}<span style='color:#f59e0b'>&#9733;</span>{% endfor %}{% for i in range(5 - review.rating) %}<span style='color:#ddd'>&#9734;</span>{% endfor %}
+                    </span>
+                    <span class="review-date">{{ review.created_at.strftime('%d/%m/%Y') }}</span>
+                </div>
+                {% if review.comment %}
+                    <p class="review-comment">{{ review.comment }}</p>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p style="color:var(--text-muted);padding:20px 0">Aucun avis pour le moment.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

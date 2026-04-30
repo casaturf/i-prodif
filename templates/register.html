@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Inscription{% endblock %}
+
+{% block content %}
+<div class="form-page">
+    <div class="form-container">
+        <h2>Créer un compte</h2>
+        <p class="subtitle">Rejoignez la communauté i-prodif</p>
+
+        <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group">
+                <label for="username">Nom d'utilisateur *</label>
+                <input type="text" id="username" name="username" placeholder="Votre pseudo" required>
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email *</label>
+                <input type="email" id="email" name="email" placeholder="votre@email.com" required>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Mot de passe *</label>
+                <input type="password" id="password" name="password" placeholder="Minimum 6 caractères" required>
+            </div>
+
+            <div class="form-group">
+                <label for="password2">Confirmer le mot de passe *</label>
+                <input type="password" id="password2" name="password2" placeholder="Répétez le mot de passe" required>
+            </div>
+
+            <div class="form-group">
+                <label for="phone">Téléphone</label>
+                <input type="tel" id="phone" name="phone" placeholder="+212 6XX XXX XXX">
+            </div>
+
+            <div class="form-group">
+                <label for="city">Ville</label>
+                <input type="text" id="city" name="city" placeholder="Votre ville">
+            </div>
+
+            <button type="submit" class="btn btn-primary form-submit">Créer mon compte</button>
+        </form>
+
+        <p class="form-footer">
+            Déjà inscrit ? <a href="{{ url_for('login') }}">Se connecter</a>
+        </p>
+    </div>
+</div>
+{% endblock %}

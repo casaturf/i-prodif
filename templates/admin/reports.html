@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Admin - Signalements{% endblock %}
+
+{% block content %}
+<div class="main">
+    <div class="section-header">
+        <h2 class="section-title">Signalements non resolus ({{ reports|length }})</h2>
+        <a href="{{ url_for('admin_dashboard') }}" class="section-link">&larr; Dashboard</a>
+    </div>
+
+    <div class="admin-table">
+        {% for r in reports %}
+        <div class="admin-row" style="padding:12px 16px">
+            <div style="flex:1">
+                <strong>Annonce #{{ r.annonce_id }} : {{ r.annonce.title[:40] }}</strong>
+                <div style="font-size:0.8rem;color:#e63946;margin-top:4px">Raison : {{ r.reason }}</div>
+                <div style="font-size:0.78rem;color:#999">Par {{ r.reporter.username }} | {{ r.created_at.strftime('%d/%m/%Y %H:%M') }}</div>
+            </div>
+            <div style="display:flex;gap:6px">
+                <a href="{{ url_for('annonce_detail', id=r.annonce_id) }}" class="card-action-btn">Voir</a>
+                <form method="POST" action="{{ url_for('admin_unflag_annonce', id=r.annonce_id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="card-action-btn" style="color:#22c55e">Approuver</button>
+                </form>
+                <form method="POST" action="{{ url_for('admin_delete_annonce', id=r.annonce_id) }}" onsubmit="return confirm('Supprimer ?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="card-action-btn" style="color:#e63946">Supprimer</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+        {% if not reports %}
+        <div style="padding:40px;text-align:center;color:#999">Aucun signalement en attente.</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

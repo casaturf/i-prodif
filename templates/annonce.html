@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}{{ annonce.title }}{% endblock %}
+
+{% block content %}
+<nav class="categories-nav">
+    <div class="categories-nav-inner">
+        <a href="{{ url_for('index') }}" class="cat-link">Accueil</a>
+        <a href="{{ url_for('category_page', slug=annonce.category.slug) }}" class="cat-link active">{{ annonce.category.icon }} {{ annonce.category.name }}</a>
+    </div>
+</nav>
+
+<div class="main">
+    <div class="annonce-detail">
+        <div class="annonce-gallery">
+            {% if annonce.photos %}
+                <div class="gallery-main">
+                    <img id="mainPhoto" src="{{ url_for('static', filename='uploads/' + annonce.photos[0]) }}" alt="{{ annonce.title }}">
+                </div>
+                {% if annonce.photos|length > 1 %}
+                <div class="gallery-thumbs">
+                    {% for photo in annonce.photos %}
+                        <img src="{{ url_for('static', filename='uploads/' + photo) }}" alt="Photo {{ loop.index }}" class="thumb {{ 'active' if loop.first }}" onclick="changePhoto(this, '{{ url_for('static', filename='uploads/' + photo) }}')">
+                    {% endfor %}
+                </div>
+                {% endif %}
+            {% else %}
+                <div class="gallery-main gallery-empty">
+                    <span>{{ annonce.category.icon }}</span>
+                    <p>Pas de photo</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="annonce-info">
+            <div class="annonce-price-box">
+                <div class="annonce-price">{{ annonce.price_display }}</div>
+                <div style="display:flex;gap:8px;align-items:center">
+                    {% if annonce.delivery %}
+                        <span class="card-badge badge-delivery">Livraison possible</span>
+                    {% endif %}
+                    {% if current_user.is_authenticated %}
+                        <form method="POST" action="{{ url_for('toggle_favorite', annonce_id=annonce.id) }}" style="display:inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn-fav {{ 'active' if is_fav }}" title="{{ 'Retirer des favoris' if is_fav else 'Ajouter aux favoris' }}">
+                                {{ '<span>&#9829;</span>'|safe if is_fav else '<span>&#9825;</span>'|safe }}
+                            </button>
+                        </form>
+                    {% endif %}
+                </div>
+            </div>
+
+            <h1 class="annonce-title">{{ annonce.title }}</h1>
+
+            <div class="annonce-meta-bar">
+                <span>{{ annonce.city }}</span>
+                <span>{{ annonce.time_ago }}</span>
+                <span>{{ annonce.views }} vue{{ 's' if annonce.views > 1 }}</span>
+                <span class="card-badge badge-state">{{ annonce.state }}</span>
+            </div>
+
+            <div class="annonce-category-tag">{{ annonce.category.icon }} {{ annonce.category.name }}</div>
+
+            <div class="annonce-description">
+                <h3>Description</h3>
+                <p>{{ annonce.description | replace('\n', '<br>') | safe }}</p>
+            </div>
+
+            <div class="seller-card">
+                <div class="seller-header">
+                    <div class="avatar" style="background:{{ annonce.author.avatar_color }};width:44px;height:44px;font-size:1.1rem">{{ annonce.author.initial }}</div>
+                    <div class="seller-info">
+                        <strong>{{ annonce.author.username }}</strong>
+                        <span>Membre depuis {{ annonce.author.created_at.strftime('%m/%Y') }}</span>
+                        {% if annonce.author.city %}<span>{{ annonce.author.city }}</span>{% endif %}
+                    </div>
+                </div>
+                {% if annonce.author.phone %}
+                    <a href="tel:{{ annonce.author.phone }}" class="btn-phone">{{ annonce.author.phone }}</a>
+                {% endif %}
+                {% if current_user.is_authenticated and current_user.id != annonce.user_id %}
+                    <a href="{{ url_for('conversation', contact_id=annonce.user_id, annonce_id=annonce.id) }}" class="btn-contact">Contacter le vendeur</a>
+                {% endif %}
+            </div>
+
+            {% if current_user.is_authenticated and current_user.id == annonce.user_id %}
+            <div class="owner-actions">
+                <a href="{{ url_for('annonce_modifier', id=annonce.id) }}" class="btn-outline" style="flex:1;text-align:center">Modifier</a>
+                {% if not annonce.currently_boosted %}
+                <form method="POST" action="{{ url_for('boost_annonce', id=annonce.id) }}" style="flex:1">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn-boost" style="width:100%">Booster 7j</button>
+                </form>
+                {% else %}
+                <span class="card-badge badge-boost" style="padding:10px 18px;font-size:0.85rem">Booste !</span>
+                {% endif %}
+                <form method="POST" action="{{ url_for('annonce_supprimer', id=annonce.id) }}" style="flex:1" onsubmit="return confirm('Supprimer cette annonce ?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn-danger" style="width:100%">Supprimer</button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if similaires %}
+    <div style="margin-top:40px">
+        <div class="section-header"><h2 class="section-title">Annonces similaires</h2></div>
+        <div class="cards-grid">
+            {% for a in similaires %}
+            <a href="{{ url_for('annonce_detail', id=a.id) }}" class="card">
+                <div class="card-img">
+                    {% if a.photo1 %}<img src="{{ url_for('static', filename='uploads/' + a.photo1) }}" alt="{{ a.title }}">
+                    {% else %}{{ a.category.icon }}{% endif %}
+                </div>
+                <div class="card-body">
+                    <div class="card-title">{{ a.title }}</div>
+                    <div class="card-price">{{ a.price_display }}</div>
+                    <div class="card-location"><span>{{ a.city }}</span></div>
+                    <div class="card-date">{{ a.time_ago }}</div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function changePhoto(thumb, url) {
+    document.getElementById('mainPhoto').src = url;
+    document.querySelectorAll('.thumb').forEach(function(t) { t.classList.remove('active'); });
+    thumb.classList.add('active');
+}
+</script>
+{% endblock %}

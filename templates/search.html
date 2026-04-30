@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Recherche{% endblock %}
+
+{% block content %}
+<div class="main">
+
+    <div class="search-page">
+
+        <!-- FILTRES -->
+        <aside class="filters-panel">
+            <h3>🔍 Filtres</h3>
+            <form method="GET" action="{{ url_for('search') }}">
+
+                <div class="filter-group">
+                    <label>Mot-clé</label>
+                    <input type="text" name="q" value="{{ q or '' }}" placeholder="Que cherchez-vous ?">
+                </div>
+
+                <div class="filter-group">
+                    <label>Catégorie</label>
+                    <select name="cat">
+                        <option value="">Toutes les catégories</option>
+                        {% for cat in categories %}
+                            <option value="{{ cat.id }}" {{ 'selected' if cat_id == cat.id }}>
+                                {{ cat.icon }} {{ cat.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label>Ville</label>
+                    <input type="text" name="city" value="{{ city or '' }}" placeholder="Ville">
+                </div>
+
+                <div class="filter-group">
+                    <label>Prix (DH)</label>
+                    <div class="price-range">
+                        <input type="number" name="price_min" value="{{ price_min or '' }}" placeholder="Min">
+                        <input type="number" name="price_max" value="{{ price_max or '' }}" placeholder="Max">
+                    </div>
+                </div>
+
+                <div class="filter-group">
+                    <label>État</label>
+                    <select name="state">
+                        <option value="">Tous</option>
+                        <option value="Neuf" {{ 'selected' if state == 'Neuf' }}>Neuf</option>
+                        <option value="Très bon état" {{ 'selected' if state == 'Très bon état' }}>Très bon état</option>
+                        <option value="Bon état" {{ 'selected' if state == 'Bon état' }}>Bon état</option>
+                        <option value="État correct" {{ 'selected' if state == 'État correct' }}>État correct</option>
+                        <option value="Pour pièces" {{ 'selected' if state == 'Pour pièces' }}>Pour pièces</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn btn-primary form-submit">Rechercher</button>
+            </form>
+        </aside>
+
+        <!-- RÉSULTATS -->
+        <div>
+            {% if current_cat is defined and current_cat %}
+                <h2 class="section-title">{{ current_cat.icon }} {{ current_cat.name }}</h2>
+            {% else %}
+                <h2 class="section-title">📋 Résultats</h2>
+            {% endif %}
+
+            <p class="results-count">{{ annonces|length }} annonce{{ 's' if annonces|length > 1 }} trouvée{{ 's' if annonces|length > 1 }}</p>
+
+            {% if annonces %}
+            <div class="cards-grid">
+                {% for annonce in annonces %}
+                <a href="{{ url_for('annonce_detail', id=annonce.id) }}" class="card" style="text-decoration:none">
+                    <div class="card-img">
+                        {% if annonce.photo1 %}
+                            <img src="{{ url_for('static', filename='uploads/' + annonce.photo1) }}" alt="{{ annonce.title }}">
+                        {% else %}
+                            {{ annonce.category.icon }}
+                        {% endif %}
+                    </div>
+                    <div class="card-body">
+                        <div class="card-price">{{ annonce.price_display }}</div>
+                        <div class="card-title">{{ annonce.title }}</div>
+                        <div class="card-meta">
+                            <span>📍 {{ annonce.city }}</span>
+                            <span>{{ annonce.time_ago }}</span>
+                        </div>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div style="text-align:center;padding:60px 20px;color:var(--text-muted)">
+                <div style="font-size:3rem;margin-bottom:12px">🔍</div>
+                <p>Aucune annonce trouvée. Essayez d'élargir vos critères.</p>
+            </div>
+            {% endif %}
+        </div>
+
+    </div>
+
+</div>
+{% endblock %}

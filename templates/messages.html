@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Messages{% endblock %}
+
+{% block content %}
+<div class="main">
+    <div class="section-header">
+        <h2 class="section-title">Mes messages</h2>
+    </div>
+
+    {% if conversations %}
+    <div class="conversations-list">
+        {% for conv in conversations %}
+        <a href="{{ url_for('conversation', contact_id=conv.contact.id) }}" class="conversation-item {{ 'unread' if conv.unread > 0 }}">
+            <div class="avatar" style="background:{{ conv.contact.avatar_color }};width:44px;height:44px;font-size:1.1rem">{{ conv.contact.initial }}</div>
+            <div class="conversation-info">
+                <div class="conversation-top">
+                    <strong>{{ conv.contact.username }}</strong>
+                    <span class="conversation-time">{{ conv.last_message.created_at.strftime('%d/%m %H:%M') if conv.last_message }}</span>
+                </div>
+                {% if conv.annonce %}
+                    <div class="conversation-annonce">{{ conv.annonce.title[:40] }}{% if conv.annonce.title|length > 40 %}...{% endif %} - {{ conv.annonce.price_display }}</div>
+                {% endif %}
+                <div class="conversation-preview">
+                    {{ conv.last_message.content[:60] }}{% if conv.last_message.content|length > 60 %}...{% endif %}
+                </div>
+            </div>
+            {% if conv.unread > 0 %}
+                <span class="conversation-badge">{{ conv.unread }}</span>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div style="text-align:center;padding:60px 20px;color:var(--text-muted)">
+        <div style="font-size:3rem;margin-bottom:10px">💬</div>
+        <p>Aucun message pour le moment.</p>
+        <p style="font-size:0.85rem;margin-top:8px">Contactez un vendeur depuis une annonce pour demarrer une conversation.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

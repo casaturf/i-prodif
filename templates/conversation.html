@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Conversation avec {{ contact.username }}{% endblock %}
+
+{% block content %}
+<div class="main">
+    <div class="conversation-page">
+        <!-- Header -->
+        <div class="conv-header">
+            <a href="{{ url_for('messages_page') }}" class="conv-back">&larr; Retour</a>
+            <div class="avatar" style="background:{{ contact.avatar_color }};width:36px;height:36px;font-size:0.9rem">{{ contact.initial }}</div>
+            <strong>{{ contact.username }}</strong>
+            {% if annonce %}
+                <span class="conv-annonce-ref">{{ annonce.title[:30] }}{% if annonce.title|length > 30 %}...{% endif %} - {{ annonce.price_display }}</span>
+            {% endif %}
+        </div>
+
+        <!-- Messages -->
+        <div class="conv-messages" id="convMessages">
+            {% if not messages %}
+                <div style="text-align:center;padding:40px;color:var(--text-muted)">
+                    <p>Debut de la conversation avec {{ contact.username }}.</p>
+                    {% if annonce %}
+                        <p style="font-size:0.85rem;margin-top:6px">A propos de : {{ annonce.title }}</p>
+                    {% endif %}
+                </div>
+            {% endif %}
+
+            {% for msg in messages %}
+            <div class="msg {{ 'msg-sent' if msg.sender_id == current_user.id else 'msg-received' }}">
+                <div class="msg-bubble">
+                    <p>{{ msg.content }}</p>
+                    <span class="msg-time">{{ msg.created_at.strftime('%d/%m %H:%M') }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Input -->
+        <div class="conv-input">
+            <form method="POST" action="{{ url_for('send_message', contact_id=contact.id) }}" class="conv-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% if annonce %}
+                    <input type="hidden" name="annonce_id" value="{{ annonce.id }}">
+                {% endif %}
+                <input type="text" name="content" placeholder="Ecrire un message..." autocomplete="off" required>
+                <button type="submit">Envoyer</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+var el = document.getElementById('convMessages');
+if (el) el.scrollTop = el.scrollHeight;
+</script>
+{% endblock %}

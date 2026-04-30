@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Mon profil{% endblock %}
+
+{% block content %}
+<div class="main">
+
+    <!-- Profile Header -->
+    <div class="profile-header">
+        <div class="avatar profile-avatar" style="background:{{ current_user.avatar_color }}">
+            {{ current_user.initial }}
+        </div>
+        <div class="profile-info">
+            <h2>{{ current_user.username }}</h2>
+            <p>{{ current_user.email }}</p>
+            {% if current_user.city %}
+                <p>📍 {{ current_user.city }}</p>
+            {% endif %}
+            <div class="profile-stats">
+                <div class="stat"><strong>{{ annonces|length }}</strong> annonce{{ 's' if annonces|length > 1 }}</div>
+                <div class="stat">Membre depuis <strong>{{ current_user.created_at.strftime('%d/%m/%Y') }}</strong></div>
+            </div>
+        </div>
+        <div style="margin-left:auto">
+            <a href="{{ url_for('deposer') }}" class="btn btn-accent">📝 Déposer une annonce</a>
+        </div>
+    </div>
+
+    <!-- Mes annonces -->
+    <h2 class="section-title">📋 Mes annonces</h2>
+
+    {% if annonces %}
+    <div class="cards-grid">
+        {% for annonce in annonces %}
+        <div class="card" style="position:relative">
+            <a href="{{ url_for('annonce_detail', id=annonce.id) }}" style="text-decoration:none;color:inherit">
+                <div class="card-img">
+                    {% if annonce.photo1 %}
+                        <img src="{{ url_for('static', filename='uploads/' + annonce.photo1) }}" alt="{{ annonce.title }}">
+                    {% else %}
+                        📦
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <div class="card-price">{{ annonce.price_display }}</div>
+                    <div class="card-title">{{ annonce.title }}</div>
+                    <div class="card-meta">
+                        <span>📍 {{ annonce.city }}</span>
+                        <span>👁 {{ annonce.views }} vue{{ 's' if annonce.views > 1 }}</span>
+                    </div>
+                </div>
+            </a>
+            <div class="card-actions">
+                <a href="{{ url_for('annonce_modifier', id=annonce.id) }}" class="card-action-btn" title="Modifier">✏️</a>
+                <form method="POST" action="{{ url_for('annonce_supprimer', id=annonce.id) }}" style="display:inline"
+                      onsubmit="return confirm('Supprimer cette annonce ?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="card-action-btn" title="Supprimer">🗑</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div style="text-align:center;padding:60px 20px;color:var(--text-muted)">
+        <div style="font-size:3rem;margin-bottom:12px">📭</div>
+        <p style="margin-bottom:16px">Vous n'avez pas encore d'annonce.</p>
+        <a href="{{ url_for('deposer') }}" class="btn btn-accent">📝 Déposer ma première annonce</a>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
