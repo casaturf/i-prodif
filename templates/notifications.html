@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}Notifications{% endblock %}
+{% block content %}
+<div style="max-width:700px;margin:40px auto;padding:0 16px">
+  <h2>Notifications</h2>
+  {% if notifications %}
+    {% for n in notifications %}
+    <div style="padding:14px;border-radius:8px;margin-bottom:8px;
+      background:{{ '#f0f7ff' if not n.is_read else '#fff' }};
+      border:1px solid {{ '#279FF5' if not n.is_read else '#eee' }}">
+      <div style="font-size:13px;color:#999">{{ n.created_at.strftime('%d/%m/%Y %H:%M') }}</div>
+      {% if n.link %}
+        <a href="{{ n.link }}" style="color:#222;text-decoration:none">{{ n.message }}</a>
+      {% else %}
+        <span>{{ n.message }}</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% else %}
+    <p style="color:#999">Aucune notification pour le moment.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Modifier l\'annonce' if edit else 'Déposer une annonce' }}{% endblock %}
+{% block meta_description %}{{ 'Modifier votre annonce sur i-prodif' if edit else 'Deposez votre annonce gratuitement sur i-prodif — Maroc, Maghreb, Afrique francophone' }}{% endblock %}
 
 {% block content %}
 <div class="main">
@@ -13,20 +14,32 @@
 
                 <div class="form-group">
                     <label for="title">Titre de l'annonce *</label>
-                    <input type="text" id="title" name="title" placeholder="Ex: iPhone 15 Pro Max 256Go" 
+                    <input type="text" id="title" name="title" placeholder="Ex: iPhone 15 Pro Max 256Go"
                            value="{{ annonce.title if edit else '' }}" required maxlength="200">
                 </div>
 
-                <div class="form-group">
-                    <label for="category_id">Catégorie *</label>
-                    <select id="category_id" name="category_id" required>
-                        <option value="">— Choisir une catégorie —</option>
-                        {% for cat in categories %}
-                            <option value="{{ cat.id }}" {{ 'selected' if edit and annonce.category_id == cat.id }}>
-                                {{ cat.icon }} {{ cat.name }}
-                            </option>
-                        {% endfor %}
-                    </select>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="category_id">Catégorie *</label>
+                        <select id="category_id" name="category_id" required onchange="loadSousCategories(this)">
+                            <option value="">— Choisir —</option>
+                            {% for cat in categories %}
+                                <option value="{{ cat.id }}" data-slug="{{ cat.slug }}"
+                                    {{ 'selected' if edit and annonce.category_id == cat.id }}>
+                                    {{ cat.icon }} {{ cat.name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="subcategory">Sous-catégorie</label>
+                        <select id="subcategory" name="subcategory">
+                            <option value="">— Choisir —</option>
+                            {% if edit and annonce.subcategory %}
+                                <option value="{{ annonce.subcategory }}" selected>{{ annonce.subcategory }}</option>
+                            {% endif %}
+                        </select>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -36,9 +49,15 @@
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="price">Prix (DH) *</label>
-                        <input type="number" id="price" name="price" placeholder="0" min="0" step="0.01"
-                               value="{{ annonce.price if edit else '' }}" required>
+                        <label for="country">Pays *</label>
+                        <select id="country" name="country" onchange="updateDevise(this)">
+                            {% for code, info in pays.items() %}
+                                <option value="{{ code }}"
+                                    {{ 'selected' if (edit and annonce.country == code) or (not edit and code == 'MAR') }}>
+                                    {{ info.nom }}
+                                </option>
+                            {% endfor %}
+                        </select>
                     </div>
                     <div class="form-group">
                         <label for="city">Ville *</label>
@@ -49,6 +68,11 @@
 
                 <div class="form-row">
                     <div class="form-group">
+                        <label for="price">Prix <span id="devise-label">DH</span> *</label>
+                        <input type="number" id="price" name="price" placeholder="0" min="0" step="0.01"
+                               value="{{ annonce.price if edit else '' }}" required>
+                    </div>
+                    <div class="form-group">
                         <label for="state">État</label>
                         <select id="state" name="state">
                             {% for s in ['Neuf', 'Très bon état', 'Bon état', 'État correct', 'Pour pièces'] %}
@@ -56,57 +80,34 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label>&nbsp;</label>
-                        <div class="checkbox-group">
-                            <input type="checkbox" id="delivery" name="delivery" {{ 'checked' if edit and annonce.delivery }}>
-                            <label for="delivery" class="checkbox-label">🚚 Livraison possible</label>
-                        </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="delivery" name="delivery" {{ 'checked' if edit and annonce.delivery }}>
+                        <label for="delivery" class="checkbox-label">🚚 Livraison possible</label>
                     </div>
                 </div>
 
                 <div class="form-group">
                     <label>Photos (max 3, formats: JPG, PNG, WebP)</label>
                     <div class="photo-upload-grid">
+                        {% for i in [1, 2, 3] %}
                         <div class="photo-upload-box">
-                            <input type="file" id="photo1" name="photo1" accept="image/*" onchange="previewImg(this, 'preview1')">
-                            <label for="photo1" class="photo-upload-label">
-                                <div id="preview1" class="photo-preview">
-                                    {% if edit and annonce.photo1 %}
-                                        <img src="{{ url_for('static', filename='uploads/' + annonce.photo1) }}">
+                            <input type="file" id="photo{{ i }}" name="photo{{ i }}" accept="image/*"
+                                   onchange="previewImg(this, 'preview{{ i }}')">
+                            <label for="photo{{ i }}" class="photo-upload-label">
+                                <div id="preview{{ i }}" class="photo-preview">
+                                    {% if edit and annonce['photo' ~ i] %}
+                                        <img src="{{ url_for('static', filename='uploads/' + annonce['photo' ~ i]) }}">
                                     {% else %}
                                         <span>📷</span>
-                                        <small>Photo 1</small>
+                                        <small>Photo {{ i }}</small>
                                     {% endif %}
                                 </div>
                             </label>
                         </div>
-                        <div class="photo-upload-box">
-                            <input type="file" id="photo2" name="photo2" accept="image/*" onchange="previewImg(this, 'preview2')">
-                            <label for="photo2" class="photo-upload-label">
-                                <div id="preview2" class="photo-preview">
-                                    {% if edit and annonce.photo2 %}
-                                        <img src="{{ url_for('static', filename='uploads/' + annonce.photo2) }}">
-                                    {% else %}
-                                        <span>📷</span>
-                                        <small>Photo 2</small>
-                                    {% endif %}
-                                </div>
-                            </label>
-                        </div>
-                        <div class="photo-upload-box">
-                            <input type="file" id="photo3" name="photo3" accept="image/*" onchange="previewImg(this, 'preview3')">
-                            <label for="photo3" class="photo-upload-label">
-                                <div id="preview3" class="photo-preview">
-                                    {% if edit and annonce.photo3 %}
-                                        <img src="{{ url_for('static', filename='uploads/' + annonce.photo3) }}">
-                                    {% else %}
-                                        <span>📷</span>
-                                        <small>Photo 3</small>
-                                    {% endif %}
-                                </div>
-                            </label>
-                        </div>
+                        {% endfor %}
                     </div>
                 </div>
 
@@ -119,6 +120,34 @@
 </div>
 
 <script>
+const PAYS_DEVISES = {
+    {% for code, info in pays.items() %}
+    '{{ code }}': '{{ info.symbole }}',
+    {% endfor %}
+};
+
+function updateDevise(select) {
+    const symbole = PAYS_DEVISES[select.value] || 'DH';
+    document.getElementById('devise-label').textContent = symbole;
+}
+
+function loadSousCategories(select) {
+    const slug = select.options[select.selectedIndex].dataset.slug;
+    const subSelect = document.getElementById('subcategory');
+    subSelect.innerHTML = '<option value="">— Choisir —</option>';
+    if (!slug) return;
+    fetch('/api/sous-categories/' + slug)
+        .then(r => r.json())
+        .then(data => {
+            data.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s;
+                opt.textContent = s;
+                subSelect.appendChild(opt);
+            });
+        });
+}
+
 function previewImg(input, previewId) {
     const preview = document.getElementById(previewId);
     if (input.files && input.files[0]) {
@@ -129,5 +158,13 @@ function previewImg(input, previewId) {
         reader.readAsDataURL(input.files[0]);
     }
 }
+
+// Init au chargement si edit
+window.addEventListener('DOMContentLoaded', function() {
+    const countrySelect = document.getElementById('country');
+    if (countrySelect) updateDevise(countrySelect);
+    const catSelect = document.getElementById('category_id');
+    if (catSelect && catSelect.value) loadSousCategories(catSelect);
+});
 </script>
 {% endblock %}

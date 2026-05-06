@@ -4,6 +4,25 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}i-prodif{% endblock %} - i-prodif</title>
+    <meta name="description" content="{% block meta_description %}i-prodif — La plateforme internationale de petites annonces au Maroc, Maghreb et Afrique francophone.{% endblock %}">
+    <meta name="robots" content="{% block meta_robots %}index, follow{% endblock %}">
+    <link rel="canonical" href="{% block canonical %}{{ site_url }}{{ request.path }}{% endblock %}">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="{% block og_title %}i-prodif{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}La plateforme internationale de petites annonces.{% endblock %}">
+    <meta property="og:image" content="{% block og_image %}{{ site_url }}/static/img/og-default.jpg{% endblock %}">
+    <meta property="og:url" content="{{ site_url }}{{ request.path }}">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="i-prodif">
+
+    <!-- Schema.org -->
+    {% block schema_org %}
+    <script type="application/ld+json">
+    {"@context":"https://schema.org","@type":"WebSite","name":"i-prodif","url":"{{ site_url }}","description":"Plateforme internationale de petites annonces — Maroc, Maghreb, Afrique francophone"}
+    </script>
+    {% endblock %}
+
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
@@ -25,7 +44,12 @@
 
         {% if current_user.is_authenticated %}
             <div class="header-icons">
-                <a href="#" class="header-icon"><span class="header-icon-img" style="font-size:1.3rem">&#128276;</span><span>Alertes</span></a>
+                <a href="{{ url_for('notifications_page') }}" class="header-icon">
+                    <span class="header-icon-img" style="font-size:1.3rem">&#128276;</span><span>Alertes</span>
+                    {% if unread_notifications > 0 %}
+                        <span class="badge-count">{{ unread_notifications }}</span>
+                    {% endif %}
+                </a>
                 <a href="{{ url_for('search') }}" class="header-icon"><span class="header-icon-img" style="font-size:1.3rem">&#128269;</span><span>Recherches</span></a>
                 <a href="{{ url_for('favorites_page') }}" class="header-icon"><span class="header-icon-img" style="font-size:1.3rem">&#9825;</span><span>Favoris</span></a>
                 <a href="{{ url_for('messages_page') }}" class="header-icon">

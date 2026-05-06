@@ -1,11 +1,42 @@
 {% extends "base.html" %}
-{% block title %}{{ annonce.title }}{% endblock %}
+{% block title %}{{ annonce.title }} — {{ annonce.city }}{% endblock %}
+{% block meta_description %}{{ annonce.meta_description }}{% endblock %}
+{% block canonical %}{{ annonce.canonical_url }}{% endblock %}
+{% block og_title %}{{ annonce.title }} — {{ annonce.price_display }}{% endblock %}
+{% block og_description %}{{ annonce.meta_description }}{% endblock %}
+{% block og_image %}{% if annonce.photo1 %}{{ site_url }}/static/uploads/{{ annonce.photo1 }}{% else %}{{ site_url }}/static/img/og-default.jpg{% endif %}{% endblock %}
+
+{% block schema_org %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "{{ annonce.title }}",
+  "description": "{{ annonce.description[:200] | replace('"', '') | replace('\n', ' ') }}",
+  "offers": {
+    "@type": "Offer",
+    "price": "{{ annonce.price }}",
+    "priceCurrency": "{{ annonce.currency or 'MAD' }}",
+    "availability": "https://schema.org/InStock",
+    "seller": {
+      "@type": "Person",
+      "name": "{{ annonce.author.username }}"
+    }
+  },
+  "image": "{% if annonce.photo1 %}{{ site_url }}/static/uploads/{{ annonce.photo1 }}{% endif %}",
+  "url": "{{ annonce.canonical_url }}"
+}
+</script>
+{% endblock %}
 
 {% block content %}
 <nav class="categories-nav">
     <div class="categories-nav-inner">
         <a href="{{ url_for('index') }}" class="cat-link">Accueil</a>
         <a href="{{ url_for('category_page', slug=annonce.category.slug) }}" class="cat-link active">{{ annonce.category.icon }} {{ annonce.category.name }}</a>
+        {% if annonce.subcategory %}
+        <a href="{{ url_for('category_page', slug=annonce.category.slug, subcategory=annonce.subcategory) }}" class="cat-link">{{ annonce.subcategory }}</a>
+        {% endif %}
     </div>
 </nav>
 
@@ -40,7 +71,7 @@
                     {% endif %}
                     {% if current_user.is_authenticated %}
                         <form method="POST" action="{{ url_for('toggle_favorite', annonce_id=annonce.id) }}" style="display:inline">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn-fav {{ 'active' if is_fav }}" title="{{ 'Retirer des favoris' if is_fav else 'Ajouter aux favoris' }}">
                                 {{ '<span>&#9829;</span>'|safe if is_fav else '<span>&#9825;</span>'|safe }}
                             </button>
@@ -52,10 +83,16 @@
             <h1 class="annonce-title">{{ annonce.title }}</h1>
 
             <div class="annonce-meta-bar">
-                <span>{{ annonce.city }}</span>
+                <span>📍 {{ annonce.city }}</span>
+                {% if annonce.country and annonce.country != 'MAR' %}
+                    <span>🌍 {{ pays.get(annonce.country, {}).get('nom', annonce.country) }}</span>
+                {% endif %}
                 <span>{{ annonce.time_ago }}</span>
                 <span>{{ annonce.views }} vue{{ 's' if annonce.views > 1 }}</span>
                 <span class="card-badge badge-state">{{ annonce.state }}</span>
+                {% if annonce.subcategory %}
+                    <span class="card-badge" style="background:#f0f7ff;color:#279FF5">{{ annonce.subcategory }}</span>
+                {% endif %}
             </div>
 
             <div class="annonce-category-tag">{{ annonce.category.icon }} {{ annonce.category.name }}</div>
@@ -87,15 +124,33 @@
                 <a href="{{ url_for('annonce_modifier', id=annonce.id) }}" class="btn-outline" style="flex:1;text-align:center">Modifier</a>
                 {% if not annonce.currently_boosted %}
                 <form method="POST" action="{{ url_for('boost_annonce', id=annonce.id) }}" style="flex:1">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn-boost" style="width:100%">Booster 7j</button>
                 </form>
                 {% else %}
                 <span class="card-badge badge-boost" style="padding:10px 18px;font-size:0.85rem">Booste !</span>
                 {% endif %}
                 <form method="POST" action="{{ url_for('annonce_supprimer', id=annonce.id) }}" style="flex:1" onsubmit="return confirm('Supprimer cette annonce ?')">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn-danger" style="width:100%">Supprimer</button>
+                </form>
+            </div>
+            {% endif %}
+
+            {% if current_user.is_authenticated and current_user.id != annonce.user_id %}
+            <div style="margin-top:12px;text-align:right">
+                <button onclick="document.getElementById('report-form').style.display='block';this.style.display='none'"
+                    style="background:none;border:none;color:#999;font-size:12px;cursor:pointer;text-decoration:underline">
+                    Signaler cette annonce
+                </button>
+                <form id="report-form" method="POST" action="{{ url_for('report_annonce', id=annonce.id) }}"
+                    style="display:none;margin-top:8px">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="text" name="reason" placeholder="Raison du signalement" required
+                        style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;margin-bottom:6px">
+                    <button type="submit" style="background:#e63946;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer">
+                        Envoyer le signalement
+                    </button>
                 </form>
             </div>
             {% endif %}

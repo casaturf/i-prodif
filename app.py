@@ -1,8 +1,16 @@
 import os
 import random
 import uuid
+import secrets
 from functools import wraps
-from flask import Flask, render_template, redirect, url_for, flash, request, abort, jsonify
+from flask import Flask, render_template, redirect, url_for, flash, request, abort, jsonify, Response
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_mail import Mail, Message as MailMessage
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -13,16 +21,55 @@ from PIL import Image as PILImage
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'iprodif-secret-key-2026'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'iprodif.db')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-only-change-me')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, 'iprodif.db'))
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = os.path.join(basedir, 'static', 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+
+app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp-relay.brevo.com')
+app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = ('i-prodif', 'noreply@i-prodif.com')
+
+SITE_URL = 'https://i-prodif.com'
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
+PAYS = {
+    'MAR': {'nom': 'Maroc', 'devise': 'MAD', 'symbole': 'DH', 'villes': ['Casablanca', 'Rabat', 'Marrakech', 'Fès', 'Tanger', 'Agadir', 'Meknès', 'Oujda', 'Kenitra', 'Tétouan']},
+    'DZA': {'nom': 'Algérie', 'devise': 'DZD', 'symbole': 'DA', 'villes': ['Alger', 'Oran', 'Constantine', 'Annaba', 'Blida', 'Batna', 'Djelfa', 'Sétif', 'Sidi Bel Abbès', 'Biskra']},
+    'TUN': {'nom': 'Tunisie', 'devise': 'TND', 'symbole': 'DT', 'villes': ['Tunis', 'Sfax', 'Sousse', 'Kairouan', 'Bizerte', 'Gabès', 'Ariana', 'Gafsa', 'Monastir', 'Ben Arous']},
+    'SEN': {'nom': 'Sénégal', 'devise': 'XOF', 'symbole': 'CFA', 'villes': ['Dakar', 'Thiès', 'Kaolack', 'Ziguinchor', 'Saint-Louis', 'Diourbel', 'Louga', 'Tambacounda', 'Kolda', 'Fatick']},
+    'CIV': {'nom': "Côte d'Ivoire", 'devise': 'XOF', 'symbole': 'CFA', 'villes': ['Abidjan', 'Bouaké', 'Daloa', 'San-Pédro', 'Yamoussoukro', 'Korhogo', 'Man', 'Divo', 'Gagnoa', 'Abengourou']},
+    'CMR': {'nom': 'Cameroun', 'devise': 'XAF', 'symbole': 'CFA', 'villes': ['Douala', 'Yaoundé', 'Garoua', 'Bamenda', 'Maroua', 'Bafoussam', 'Ngaoundéré', 'Bertoua', 'Kumba', 'Nkongsamba']},
+    'FRA': {'nom': 'France', 'devise': 'EUR', 'symbole': '€', 'villes': ['Paris', 'Lyon', 'Marseille', 'Toulouse', 'Nice', 'Nantes', 'Strasbourg', 'Montpellier', 'Bordeaux', 'Lille']},
+    'BEL': {'nom': 'Belgique', 'devise': 'EUR', 'symbole': '€', 'villes': ['Bruxelles', 'Liège', 'Gand', 'Anvers', 'Bruges', 'Namur', 'Mons', 'Charleroi', 'Louvain', 'Hasselt']},
+    'CHE': {'nom': 'Suisse', 'devise': 'CHF', 'symbole': 'CHF', 'villes': ['Zurich', 'Genève', 'Bâle', 'Lausanne', 'Berne', 'Winterthour', 'Lucerne', 'Saint-Gall', 'Lugano', 'Bienne']},
+}
+
+SOUS_CATEGORIES = {
+    'immobilier': ['Ventes', 'Locations', 'Colocations', 'Bureaux & Commerces', 'Terrains'],
+    'vehicules': ['Voitures', 'Motos', 'Camions', 'Bateaux', 'Caravaning', 'Utilitaires'],
+    'electronique': ['Téléphones', 'Ordinateurs', 'Tablettes', 'TV & Audio', 'Consoles', 'Accessoires'],
+    'mode': ['Vêtements Femme', 'Vêtements Homme', 'Chaussures', 'Sacs & Accessoires', 'Montres & Bijoux'],
+    'maison-jardin': ['Meubles', 'Électroménager', 'Décoration', 'Bricolage', 'Jardinage'],
+    'emploi': ["Offres d'emploi", 'Formations', 'Alternance', 'Freelance'],
+    'loisirs': ['Sports & Fitness', 'Jeux vidéo', 'Livres & BD', 'Musique', 'Films & Séries'],
+    'famille': ['Puériculture', 'Jouets', 'Vêtements Enfants', 'Mobilier Bébé'],
+    'animaux': ['Chiens', 'Chats', 'Oiseaux', 'Accessoires Animaux'],
+    'services': ['Cours particuliers', 'Déménagement', 'Réparation', 'Baby-sitting', 'Nettoyage'],
+    'vacances': ['Locations vacances', 'Hôtels', 'Circuits', 'Vols'],
+}
+
 from flask_wtf.csrf import CSRFProtect
 csrf = CSRFProtect(app)
+
+limiter = Limiter(get_remote_address, app=app, default_limits=[])
+mail = Mail(app)
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
@@ -39,15 +86,10 @@ def save_photo(file, max_size=1200):
         try:
             img = PILImage.open(file)
             img = img.convert('RGB')
-
-            # Resize if too large
             w, h = img.size
             if w > max_size or h > max_size:
                 ratio = min(max_size / w, max_size / h)
-                new_w = int(w * ratio)
-                new_h = int(h * ratio)
-                img = img.resize((new_w, new_h), PILImage.LANCZOS)
-
+                img = img.resize((int(w * ratio), int(h * ratio)), PILImage.LANCZOS)
             filename = f"{uuid.uuid4().hex}.jpg"
             os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
@@ -68,6 +110,30 @@ def admin_required(f):
     return decorated
 
 
+def send_email(to, subject, body):
+    try:
+        msg = MailMessage(subject, recipients=[to], html=body)
+        mail.send(msg)
+        return True
+    except Exception as e:
+        print(f"Erreur email: {e}")
+        return False
+
+
+def slugify(text):
+    import re
+    text = text.lower().strip()
+    text = re.sub(r'[àáâãäå]', 'a', text)
+    text = re.sub(r'[èéêë]', 'e', text)
+    text = re.sub(r'[ìíîï]', 'i', text)
+    text = re.sub(r'[òóôõö]', 'o', text)
+    text = re.sub(r'[ùúûü]', 'u', text)
+    text = re.sub(r'[ç]', 'c', text)
+    text = re.sub(r'[^a-z0-9\s-]', '', text)
+    text = re.sub(r'[\s-]+', '-', text)
+    return text.strip('-')
+
+
 # ═══ MODELS ═══
 
 class User(UserMixin, db.Model):
@@ -77,14 +143,21 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     phone = db.Column(db.String(20))
     city = db.Column(db.String(100))
+    country = db.Column(db.String(3), default='MAR')
     bio = db.Column(db.Text, default='')
     avatar_color = db.Column(db.String(7), default='#279FF5')
     is_admin = db.Column(db.Boolean, default=False)
     is_pro = db.Column(db.Boolean, default=False)
     is_banned = db.Column(db.Boolean, default=False)
+    email_verified = db.Column(db.Boolean, default=False)
+    email_verify_token = db.Column(db.String(100), nullable=True)
+    reset_token = db.Column(db.String(100), nullable=True)
+    reset_expires = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     annonces = db.relationship('Annonce', backref='author', lazy=True)
     favorites = db.relationship('Favorite', backref='user', lazy=True)
+    notifications = db.relationship('Notification', backref='user', lazy=True,
+                                    foreign_keys='Notification.user_id')
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -99,6 +172,10 @@ class User(UserMixin, db.Model):
     @property
     def unread_count(self):
         return Message.query.filter_by(recipient_id=self.id, is_read=False).count()
+
+    @property
+    def unread_notifications(self):
+        return Notification.query.filter_by(user_id=self.id, is_read=False).count()
 
     def has_favorited(self, annonce_id):
         return Favorite.query.filter_by(user_id=self.id, annonce_id=annonce_id).first() is not None
@@ -133,6 +210,9 @@ class Annonce(db.Model):
     description = db.Column(db.Text, nullable=False)
     price = db.Column(db.Float, nullable=False)
     city = db.Column(db.String(100), nullable=False)
+    country = db.Column(db.String(3), default='MAR')
+    currency = db.Column(db.String(3), default='MAD')
+    subcategory = db.Column(db.String(100), nullable=True)
     state = db.Column(db.String(50), default='Bon etat')
     delivery = db.Column(db.Boolean, default=False)
     photo1 = db.Column(db.String(300))
@@ -149,6 +229,14 @@ class Annonce(db.Model):
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
 
     @property
+    def slug(self):
+        return f"{self.id}-{slugify(self.title)}"
+
+    @property
+    def canonical_url(self):
+        return f"{SITE_URL}/annonce/{self.slug}"
+
+    @property
     def time_ago(self):
         diff = datetime.utcnow() - self.created_at
         if diff.days > 0:
@@ -161,9 +249,10 @@ class Annonce(db.Model):
 
     @property
     def price_display(self):
+        symbole = PAYS.get(self.currency, {}).get('symbole', self.currency) if self.currency else 'DH'
         if self.price >= 1000:
-            return f"{self.price:,.0f} DH".replace(",", " ")
-        return f"{self.price:.0f} DH"
+            return f"{self.price:,.0f} {symbole}".replace(",", " ")
+        return f"{self.price:.0f} {symbole}"
 
     @property
     def photos(self):
@@ -177,6 +266,21 @@ class Annonce(db.Model):
             return False
         return True
 
+    @property
+    def meta_description(self):
+        desc = self.description[:150].replace('\n', ' ').strip()
+        return f"{desc}... — {self.price_display} à {self.city}"
+
+
+class Notification(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    type = db.Column(db.String(50), nullable=False)
+    message = db.Column(db.String(300), nullable=False)
+    link = db.Column(db.String(300), nullable=True)
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -186,7 +290,6 @@ class Message(db.Model):
     content = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_read = db.Column(db.Boolean, default=False)
-
     sender = db.relationship('User', foreign_keys=[sender_id], backref='sent_messages')
     recipient = db.relationship('User', foreign_keys=[recipient_id], backref='received_messages')
     annonce = db.relationship('Annonce', backref='messages')
@@ -197,7 +300,6 @@ class Favorite(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     annonce_id = db.Column(db.Integer, db.ForeignKey('annonce.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
     annonce = db.relationship('Annonce', backref='favorites')
     __table_args__ = (db.UniqueConstraint('user_id', 'annonce_id'),)
 
@@ -206,13 +308,11 @@ class Review(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     reviewer_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     seller_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    rating = db.Column(db.Integer, nullable=False)  # 1-5
+    rating = db.Column(db.Integer, nullable=False)
     comment = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
     reviewer = db.relationship('User', foreign_keys=[reviewer_id], backref='reviews_given')
     seller = db.relationship('User', foreign_keys=[seller_id], backref='reviews_received')
-
     __table_args__ = (db.UniqueConstraint('reviewer_id', 'seller_id'),)
 
 
@@ -223,7 +323,6 @@ class Report(db.Model):
     reason = db.Column(db.String(300), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_resolved = db.Column(db.Boolean, default=False)
-
     reporter = db.relationship('User', backref='reports')
     annonce = db.relationship('Annonce', backref='reports')
 
@@ -233,11 +332,57 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 
+def create_notification(user_id, type, message, link=None):
+    notif = Notification(user_id=user_id, type=type, message=message, link=link)
+    db.session.add(notif)
+    db.session.commit()
+
+
 @app.context_processor
 def inject_globals():
     if current_user.is_authenticated:
-        return dict(unread_messages=current_user.unread_count)
-    return dict(unread_messages=0)
+        return dict(
+            unread_messages=current_user.unread_count,
+            unread_notifications=current_user.unread_notifications,
+            pays=PAYS, sous_categories=SOUS_CATEGORIES, site_url=SITE_URL
+        )
+    return dict(unread_messages=0, unread_notifications=0,
+                pays=PAYS, sous_categories=SOUS_CATEGORIES, site_url=SITE_URL)
+
+
+# ═══ SEO ROUTES ═══
+
+@app.route('/robots.txt')
+def robots_txt():
+    content = f"""User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /profil
+Disallow: /messages
+Disallow: /favoris
+Disallow: /notifications
+
+Sitemap: {SITE_URL}/sitemap.xml
+"""
+    return Response(content, mimetype='text/plain')
+
+
+@app.route('/sitemap.xml')
+def sitemap():
+    urls = []
+    urls.append(f'<url><loc>{SITE_URL}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>')
+    categories = Category.query.all()
+    for cat in categories:
+        urls.append(f'<url><loc>{SITE_URL}/categorie/{cat.slug}</loc><changefreq>daily</changefreq><priority>0.8</priority></url>')
+    annonces = Annonce.query.filter_by(is_active=True).order_by(Annonce.created_at.desc()).limit(5000).all()
+    for a in annonces:
+        lastmod = a.created_at.strftime('%Y-%m-%d')
+        urls.append(f'<url><loc>{SITE_URL}/annonce/{a.slug}</loc><lastmod>{lastmod}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>')
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+    xml += '\n'.join(urls)
+    xml += '\n</urlset>'
+    return Response(xml, mimetype='application/xml')
 
 
 # ═══ ROUTES ═══
@@ -246,34 +391,67 @@ def inject_globals():
 def index():
     categories = Category.query.all()
     page = request.args.get('page', 1, type=int)
-    per_page = 20
-
-    # Boosted annonces first
-    boosted = Annonce.query.filter_by(is_active=True, is_boosted=True)\
-        .filter(db.or_(Annonce.boost_until.is_(None), Annonce.boost_until > datetime.utcnow()))\
-        .order_by(Annonce.created_at.desc()).limit(5).all()
-
+    country_filter = request.args.get('country', '').strip()
+    boosted_q = Annonce.query.filter_by(is_active=True, is_boosted=True)\
+        .filter(db.or_(Annonce.boost_until.is_(None), Annonce.boost_until > datetime.utcnow()))
+    if country_filter:
+        boosted_q = boosted_q.filter_by(country=country_filter)
+    boosted = boosted_q.order_by(Annonce.created_at.desc()).limit(5).all()
     sections = []
     for cat in categories:
-        annonces = Annonce.query.filter_by(category_id=cat.id, is_active=True)\
-            .order_by(Annonce.is_boosted.desc(), Annonce.created_at.desc()).limit(5).all()
+        q = Annonce.query.filter_by(category_id=cat.id, is_active=True)
+        if country_filter:
+            q = q.filter_by(country=country_filter)
+        annonces = q.order_by(Annonce.is_boosted.desc(), Annonce.created_at.desc()).limit(5).all()
         if annonces:
             sections.append({'category': cat, 'annonces': annonces})
-
-    # Recent annonces with pagination
-    recent_pagination = Annonce.query.filter_by(is_active=True)\
-        .order_by(Annonce.is_boosted.desc(), Annonce.created_at.desc())\
-        .paginate(page=page, per_page=per_page, error_out=False)
-
+    recent_q = Annonce.query.filter_by(is_active=True)
+    if country_filter:
+        recent_q = recent_q.filter_by(country=country_filter)
+    recent_pagination = recent_q.order_by(Annonce.is_boosted.desc(), Annonce.created_at.desc())\
+        .paginate(page=page, per_page=20, error_out=False)
     return render_template('index.html', categories=categories, sections=sections,
-                           boosted=boosted, recent=recent_pagination)
+                           boosted=boosted, recent=recent_pagination,
+                           country_filter=country_filter)
+
+
+@app.route('/api/villes/<country_code>')
+def api_villes(country_code):
+    pays = PAYS.get(country_code.upper())
+    if not pays:
+        return jsonify([])
+    return jsonify(pays['villes'])
+
+
+@app.route('/api/sous-categories/<slug>')
+def api_sous_categories(slug):
+    return jsonify(SOUS_CATEGORIES.get(slug, []))
+
+
+@app.route('/notifications')
+@login_required
+def notifications_page():
+    notifs = Notification.query.filter_by(user_id=current_user.id)\
+        .order_by(Notification.created_at.desc()).limit(50).all()
+    Notification.query.filter_by(user_id=current_user.id, is_read=False)\
+        .update({'is_read': True})
+    db.session.commit()
+    return render_template('notifications.html', notifications=notifs)
+
+
+@app.route('/notifications/marquer-lues', methods=['POST'])
+@login_required
+def mark_notifications_read():
+    Notification.query.filter_by(user_id=current_user.id, is_read=False)\
+        .update({'is_read': True})
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 @app.route('/inscription', methods=['GET', 'POST'])
 def register():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
-
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         email = request.form.get('email', '').strip()
@@ -281,7 +459,7 @@ def register():
         password2 = request.form.get('password2', '')
         phone = request.form.get('phone', '').strip()
         city = request.form.get('city', '').strip()
-
+        country = request.form.get('country', 'MAR')
         if not username or not email or not password:
             flash("Tous les champs obligatoires doivent etre remplis.", "error")
             return render_template('register.html')
@@ -297,41 +475,133 @@ def register():
         if User.query.filter_by(username=username).first():
             flash("Nom d'utilisateur deja pris.", "error")
             return render_template('register.html')
-
         colors = ['#279FF5', '#4CAF50', '#FF9800', '#9C27B0', '#E91E63', '#00BCD4', '#607D8B', '#FF5722']
-        user = User(username=username, email=email, phone=phone, city=city,
-                     avatar_color=random.choice(colors))
+        token = secrets.token_urlsafe(32)
+        user = User(username=username, email=email, phone=phone, city=city, country=country,
+                    avatar_color=random.choice(colors),
+                    email_verify_token=token, email_verified=False)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
+        verify_url = url_for('verify_email', token=token, _external=True)
+        send_email(email, 'Confirmez votre email — i-prodif',
+            f'''<div style="font-family:Arial;max-width:600px;margin:auto">
+            <h2 style="color:#279FF5">Bienvenue sur i-prodif !</h2>
+            <p>Bonjour {username}, cliquez sur le bouton ci-dessous pour confirmer votre email :</p>
+            <a href="{verify_url}" style="background:#279FF5;color:white;padding:12px 24px;
+            text-decoration:none;border-radius:6px;display:inline-block;margin:16px 0">
+            Confirmer mon email</a>
+            <p style="color:#999;font-size:12px">Ce lien expire dans 24h.</p>
+            </div>''')
         login_user(user)
-        flash("Bienvenue sur i-prodif !", "success")
+        flash("Compte cree ! Verifiez votre email pour activer votre compte.", "success")
         return redirect(url_for('index'))
-
     return render_template('register.html')
 
 
+@app.route('/verifier-email/<token>')
+def verify_email(token):
+    user = User.query.filter_by(email_verify_token=token).first()
+    if not user:
+        flash("Lien invalide ou expire.", "error")
+        return redirect(url_for('index'))
+    user.email_verified = True
+    user.email_verify_token = None
+    db.session.commit()
+    flash("Email confirme ! Votre compte est maintenant actif.", "success")
+    return redirect(url_for('index'))
+
+
+@app.route('/renvoyer-verification')
+@login_required
+def resend_verification():
+    if current_user.email_verified:
+        flash("Votre email est deja verifie.", "info")
+        return redirect(url_for('profile'))
+    token = secrets.token_urlsafe(32)
+    current_user.email_verify_token = token
+    db.session.commit()
+    verify_url = url_for('verify_email', token=token, _external=True)
+    send_email(current_user.email, 'Confirmez votre email — i-prodif',
+        f'''<div style="font-family:Arial;max-width:600px;margin:auto">
+        <h2 style="color:#279FF5">Confirmation email i-prodif</h2>
+        <p>Cliquez sur le bouton ci-dessous pour confirmer votre email :</p>
+        <a href="{verify_url}" style="background:#279FF5;color:white;padding:12px 24px;
+        text-decoration:none;border-radius:6px;display:inline-block;margin:16px 0">
+        Confirmer mon email</a>
+        <p style="color:#999;font-size:12px">Ce lien expire dans 24h.</p>
+        </div>''')
+    flash("Email de verification renvoye !", "success")
+    return redirect(url_for('profile'))
+
+
+@app.route('/mot-de-passe-oublie', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip()
+        user = User.query.filter_by(email=email).first()
+        if user:
+            token = secrets.token_urlsafe(32)
+            user.reset_token = token
+            user.reset_expires = datetime.utcnow() + timedelta(hours=24)
+            db.session.commit()
+            reset_url = url_for('reset_password', token=token, _external=True)
+            send_email(email, 'Reinitialisation mot de passe — i-prodif',
+                f'''<div style="font-family:Arial;max-width:600px;margin:auto">
+                <h2 style="color:#279FF5">Reinitialisation de votre mot de passe</h2>
+                <p>Cliquez ci-dessous pour choisir un nouveau mot de passe :</p>
+                <a href="{reset_url}" style="background:#279FF5;color:white;padding:12px 24px;
+                text-decoration:none;border-radius:6px;display:inline-block;margin:16px 0">
+                Reinitialiser mon mot de passe</a>
+                <p style="color:#999;font-size:12px">Ce lien expire dans 24h.</p>
+                </div>''')
+        flash("Si cet email existe, un lien de reinitialisation a ete envoye.", "success")
+        return redirect(url_for('login'))
+    return render_template('forgot_password.html')
+
+
+@app.route('/reinitialiser/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    user = User.query.filter_by(reset_token=token).first()
+    if not user or not user.reset_expires or user.reset_expires < datetime.utcnow():
+        flash("Lien invalide ou expire.", "error")
+        return redirect(url_for('forgot_password'))
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        password2 = request.form.get('password2', '')
+        if len(password) < 6:
+            flash("Mot de passe trop court (min 6 caracteres).", "error")
+            return render_template('reset_password.html', token=token)
+        if password != password2:
+            flash("Les mots de passe ne correspondent pas.", "error")
+            return render_template('reset_password.html', token=token)
+        user.set_password(password)
+        user.reset_token = None
+        user.reset_expires = None
+        db.session.commit()
+        flash("Mot de passe modifie ! Vous pouvez vous connecter.", "success")
+        return redirect(url_for('login'))
+    return render_template('reset_password.html', token=token)
+
+
 @app.route('/connexion', methods=['GET', 'POST'])
+@limiter.limit("5 per 15 minutes")
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
-
     if request.method == 'POST':
         email = request.form.get('email', '').strip()
         password = request.form.get('password', '')
         user = User.query.filter_by(email=email).first()
-
         if user and user.is_banned:
             flash("Ce compte a ete suspendu.", "error")
             return render_template('login.html')
-
         if user and user.check_password(password):
             login_user(user, remember=True)
             flash("Connexion reussie !", "success")
             return redirect(request.args.get('next') or url_for('index'))
         else:
             flash("Email ou mot de passe incorrect.", "error")
-
     return render_template('login.html')
 
 
@@ -350,8 +620,6 @@ def profile():
     return render_template('profile.html', annonces=annonces)
 
 
-# ═══ PHASE 4 : PROFIL VENDEUR PUBLIC ═══
-
 @app.route('/vendeur/<int:user_id>')
 def seller_profile(user_id):
     seller = User.query.get_or_404(user_id)
@@ -359,13 +627,10 @@ def seller_profile(user_id):
         .order_by(Annonce.created_at.desc()).all()
     reviews = Review.query.filter_by(seller_id=seller.id)\
         .order_by(Review.created_at.desc()).all()
-
     can_review = False
     if current_user.is_authenticated and current_user.id != seller.id:
-        existing = Review.query.filter_by(reviewer_id=current_user.id, seller_id=seller.id).first()
-        if not existing:
+        if not Review.query.filter_by(reviewer_id=current_user.id, seller_id=seller.id).first():
             can_review = True
-
     return render_template('vendeur.html', seller=seller, annonces=annonces,
                            reviews=reviews, can_review=can_review)
 
@@ -376,28 +641,23 @@ def add_review(user_id):
     seller = User.query.get_or_404(user_id)
     if current_user.id == seller.id:
         abort(403)
-
-    existing = Review.query.filter_by(reviewer_id=current_user.id, seller_id=seller.id).first()
-    if existing:
+    if Review.query.filter_by(reviewer_id=current_user.id, seller_id=seller.id).first():
         flash("Vous avez deja laisse un avis.", "error")
         return redirect(url_for('seller_profile', user_id=user_id))
-
     rating = request.form.get('rating', type=int)
     comment = request.form.get('comment', '').strip()
-
     if not rating or rating < 1 or rating > 5:
         flash("Note invalide (1-5).", "error")
         return redirect(url_for('seller_profile', user_id=user_id))
-
-    review = Review(reviewer_id=current_user.id, seller_id=seller.id,
-                    rating=rating, comment=comment)
-    db.session.add(review)
+    db.session.add(Review(reviewer_id=current_user.id, seller_id=seller.id,
+                          rating=rating, comment=comment))
     db.session.commit()
+    create_notification(seller.id, 'avis',
+        f"{current_user.username} vous a laisse un avis {rating}/5",
+        url_for('seller_profile', user_id=seller.id))
     flash("Avis publie !", "success")
     return redirect(url_for('seller_profile', user_id=user_id))
 
-
-# ═══ PHASE 4 : BOOST ═══
 
 @app.route('/annonce/<int:id>/boost', methods=['POST'])
 @login_required
@@ -405,7 +665,6 @@ def boost_annonce(id):
     annonce = Annonce.query.get_or_404(id)
     if annonce.user_id != current_user.id:
         abort(403)
-
     annonce.is_boosted = True
     annonce.boost_until = datetime.utcnow() + timedelta(days=7)
     db.session.commit()
@@ -413,20 +672,15 @@ def boost_annonce(id):
     return redirect(url_for('annonce_detail', id=id))
 
 
-# ═══ PHASE 4 : SIGNALEMENT ═══
-
 @app.route('/annonce/<int:id>/signaler', methods=['POST'])
 @login_required
 def report_annonce(id):
     annonce = Annonce.query.get_or_404(id)
     reason = request.form.get('reason', '').strip()
-
     if not reason:
         flash("Veuillez indiquer une raison.", "error")
         return redirect(url_for('annonce_detail', id=id))
-
-    report = Report(reporter_id=current_user.id, annonce_id=id, reason=reason)
-    db.session.add(report)
+    db.session.add(Report(reporter_id=current_user.id, annonce_id=id, reason=reason))
     annonce.is_flagged = True
     annonce.flag_reason = reason
     db.session.commit()
@@ -434,33 +688,25 @@ def report_annonce(id):
     return redirect(url_for('annonce_detail', id=id))
 
 
-# ═══ PHASE 4 : ADMIN PANEL ═══
-
 @app.route('/admin')
 @login_required
 @admin_required
 def admin_dashboard():
-    total_users = User.query.count()
-    total_annonces = Annonce.query.filter_by(is_active=True).count()
-    total_messages = Message.query.count()
-    flagged = Annonce.query.filter_by(is_flagged=True, is_active=True).count()
-    reports = Report.query.filter_by(is_resolved=False).count()
-    recent_users = User.query.order_by(User.created_at.desc()).limit(10).all()
-    recent_annonces = Annonce.query.order_by(Annonce.created_at.desc()).limit(10).all()
-
     return render_template('admin/dashboard.html',
-                           total_users=total_users, total_annonces=total_annonces,
-                           total_messages=total_messages, flagged=flagged,
-                           reports_count=reports,
-                           recent_users=recent_users, recent_annonces=recent_annonces)
+                           total_users=User.query.count(),
+                           total_annonces=Annonce.query.filter_by(is_active=True).count(),
+                           total_messages=Message.query.count(),
+                           flagged=Annonce.query.filter_by(is_flagged=True, is_active=True).count(),
+                           reports_count=Report.query.filter_by(is_resolved=False).count(),
+                           recent_users=User.query.order_by(User.created_at.desc()).limit(10).all(),
+                           recent_annonces=Annonce.query.order_by(Annonce.created_at.desc()).limit(10).all())
 
 
 @app.route('/admin/users')
 @login_required
 @admin_required
 def admin_users():
-    users = User.query.order_by(User.created_at.desc()).all()
-    return render_template('admin/users.html', users=users)
+    return render_template('admin/users.html', users=User.query.order_by(User.created_at.desc()).all())
 
 
 @app.route('/admin/user/<int:id>/toggle-ban', methods=['POST'])
@@ -535,13 +781,10 @@ def admin_reports():
     return render_template('admin/reports.html', reports=reports)
 
 
-# ═══ ANNONCES (Phase 2) ═══
-
 @app.route('/deposer', methods=['GET', 'POST'])
 @login_required
 def deposer():
     categories = Category.query.all()
-
     if request.method == 'POST':
         title = request.form.get('title', '').strip()
         description = request.form.get('description', '').strip()
@@ -549,12 +792,13 @@ def deposer():
         city = request.form.get('city', '').strip()
         state = request.form.get('state', 'Bon etat')
         category_id = request.form.get('category_id', type=int)
+        subcategory = request.form.get('subcategory', '').strip()
         delivery = request.form.get('delivery') == 'on'
-
+        country = request.form.get('country', 'MAR')
+        currency = PAYS.get(country, {}).get('devise', 'MAD')
         if not title or not description or not price or not city or not category_id:
             flash("Champs obligatoires manquants.", "error")
             return render_template('deposer.html', categories=categories)
-
         try:
             price = float(price)
             if price < 0:
@@ -562,38 +806,39 @@ def deposer():
         except ValueError:
             flash("Prix invalide.", "error")
             return render_template('deposer.html', categories=categories)
-
-        photo1 = save_photo(request.files.get('photo1'))
-        photo2 = save_photo(request.files.get('photo2'))
-        photo3 = save_photo(request.files.get('photo3'))
-
         annonce = Annonce(title=title, description=description, price=price, city=city,
-                          state=state, delivery=delivery, photo1=photo1, photo2=photo2,
-                          photo3=photo3, user_id=current_user.id, category_id=category_id)
+                          state=state, delivery=delivery, country=country, currency=currency,
+                          subcategory=subcategory,
+                          photo1=save_photo(request.files.get('photo1')),
+                          photo2=save_photo(request.files.get('photo2')),
+                          photo3=save_photo(request.files.get('photo3')),
+                          user_id=current_user.id, category_id=category_id)
         db.session.add(annonce)
         db.session.commit()
         flash("Annonce publiee !", "success")
         return redirect(url_for('annonce_detail', id=annonce.id))
-
     return render_template('deposer.html', categories=categories)
 
 
 @app.route('/annonce/<int:id>')
-def annonce_detail(id):
+@app.route('/annonce/<path:slug>')
+def annonce_detail(id=None, slug=None):
+    if slug and not id:
+        try:
+            id = int(slug.split('-')[0])
+        except (ValueError, IndexError):
+            abort(404)
     annonce = Annonce.query.get_or_404(id)
-    annonce.views += 1
+    if not annonce.is_active:
+        abort(404)
+    db.session.execute(db.text("UPDATE annonce SET views = views + 1 WHERE id = :id"), {"id": id})
     db.session.commit()
-
-    is_fav = False
-    if current_user.is_authenticated:
-        is_fav = current_user.has_favorited(annonce.id)
-
+    is_fav = current_user.is_authenticated and current_user.has_favorited(annonce.id)
     similaires = Annonce.query.filter(
         Annonce.category_id == annonce.category_id,
         Annonce.id != annonce.id,
         Annonce.is_active == True
     ).order_by(Annonce.created_at.desc()).limit(4).all()
-
     return render_template('annonce.html', annonce=annonce, similaires=similaires, is_fav=is_fav)
 
 
@@ -616,33 +861,30 @@ def annonce_modifier(id):
     if annonce.user_id != current_user.id:
         abort(403)
     categories = Category.query.all()
-
     if request.method == 'POST':
         annonce.title = request.form.get('title', '').strip()
         annonce.description = request.form.get('description', '').strip()
         annonce.city = request.form.get('city', '').strip()
         annonce.state = request.form.get('state', 'Bon etat')
         annonce.category_id = request.form.get('category_id', type=int)
+        annonce.subcategory = request.form.get('subcategory', '').strip()
         annonce.delivery = request.form.get('delivery') == 'on'
+        annonce.country = request.form.get('country', 'MAR')
+        annonce.currency = PAYS.get(annonce.country, {}).get('devise', 'MAD')
         try:
             annonce.price = float(request.form.get('price', '0'))
         except ValueError:
             flash("Prix invalide.", "error")
             return render_template('deposer.html', categories=categories, annonce=annonce, edit=True)
-
-        for i, key in enumerate(['photo1', 'photo2', 'photo3'], 1):
+        for key in ['photo1', 'photo2', 'photo3']:
             new = save_photo(request.files.get(key))
             if new:
                 setattr(annonce, key, new)
-
         db.session.commit()
         flash("Annonce modifiee !", "success")
         return redirect(url_for('annonce_detail', id=annonce.id))
-
     return render_template('deposer.html', categories=categories, annonce=annonce, edit=True)
 
-
-# ═══ FAVORIS (Phase 3) ═══
 
 @app.route('/favori/toggle/<int:annonce_id>', methods=['POST'])
 @login_required
@@ -650,12 +892,11 @@ def toggle_favorite(annonce_id):
     fav = Favorite.query.filter_by(user_id=current_user.id, annonce_id=annonce_id).first()
     if fav:
         db.session.delete(fav)
-        db.session.commit()
         flash("Retire des favoris.", "success")
     else:
         db.session.add(Favorite(user_id=current_user.id, annonce_id=annonce_id))
-        db.session.commit()
         flash("Ajoute aux favoris !", "success")
+    db.session.commit()
     return redirect(request.referrer or url_for('annonce_detail', id=annonce_id))
 
 
@@ -663,11 +904,8 @@ def toggle_favorite(annonce_id):
 @login_required
 def favorites_page():
     favs = Favorite.query.filter_by(user_id=current_user.id).order_by(Favorite.created_at.desc()).all()
-    annonces = [f.annonce for f in favs if f.annonce.is_active]
-    return render_template('favoris.html', annonces=annonces)
+    return render_template('favoris.html', annonces=[f.annonce for f in favs if f.annonce.is_active])
 
-
-# ═══ MESSAGERIE (Phase 3) ═══
 
 @app.route('/messages')
 @login_required
@@ -675,7 +913,6 @@ def messages_page():
     sent = db.session.query(Message.recipient_id).filter_by(sender_id=current_user.id).distinct()
     received = db.session.query(Message.sender_id).filter_by(recipient_id=current_user.id).distinct()
     contact_ids = set(r[0] for r in sent) | set(r[0] for r in received)
-
     conversations = []
     for cid in contact_ids:
         contact = User.query.get(cid)
@@ -694,10 +931,8 @@ def messages_page():
                 db.and_(Message.sender_id == cid, Message.recipient_id == current_user.id)
             ), Message.annonce_id.isnot(None)
         ).order_by(Message.created_at.asc()).first()
-        conversations.append({
-            'contact': contact, 'last_message': last_msg, 'unread': unread,
-            'annonce': related.annonce if related else None
-        })
+        conversations.append({'contact': contact, 'last_message': last_msg, 'unread': unread,
+                               'annonce': related.annonce if related else None})
     conversations.sort(key=lambda c: c['last_message'].created_at if c['last_message'] else datetime.min, reverse=True)
     return render_template('messages.html', conversations=conversations)
 
@@ -738,6 +973,12 @@ def send_message(contact_id):
     db.session.add(Message(sender_id=current_user.id, recipient_id=contact_id,
                            content=content, annonce_id=annonce_id))
     db.session.commit()
+    annonce = Annonce.query.get(annonce_id) if annonce_id else None
+    notif_msg = f"Nouveau message de {current_user.username}"
+    if annonce:
+        notif_msg += f" pour : {annonce.title}"
+    create_notification(contact_id, 'message', notif_msg,
+                        url_for('conversation', contact_id=current_user.id))
     return redirect(url_for('conversation', contact_id=contact_id))
 
 
@@ -746,10 +987,11 @@ def search():
     q = request.args.get('q', '').strip()
     cat_id = request.args.get('cat', type=int)
     city = request.args.get('city', '').strip()
+    country = request.args.get('country', '').strip()
+    subcategory = request.args.get('subcategory', '').strip()
     price_min = request.args.get('price_min', type=float)
     price_max = request.args.get('price_max', type=float)
     state = request.args.get('state', '').strip()
-
     query = Annonce.query.filter_by(is_active=True)
     if q:
         query = query.filter(Annonce.title.ilike(f'%{q}%'))
@@ -757,35 +999,40 @@ def search():
         query = query.filter_by(category_id=cat_id)
     if city:
         query = query.filter(Annonce.city.ilike(f'%{city}%'))
+    if country:
+        query = query.filter_by(country=country)
+    if subcategory:
+        query = query.filter_by(subcategory=subcategory)
     if price_min:
         query = query.filter(Annonce.price >= price_min)
     if price_max:
         query = query.filter(Annonce.price <= price_max)
     if state:
         query = query.filter_by(state=state)
-
     page = request.args.get('page', 1, type=int)
-    per_page = 20
     pagination = query.order_by(Annonce.is_boosted.desc(), Annonce.created_at.desc())\
-        .paginate(page=page, per_page=per_page, error_out=False)
-    categories = Category.query.all()
-    return render_template('search.html', annonces=pagination.items, categories=categories,
-                           q=q, cat_id=cat_id, city=city, price_min=price_min,
-                           price_max=price_max, state=state, pagination=pagination)
+        .paginate(page=page, per_page=20, error_out=False)
+    return render_template('search.html', annonces=pagination.items, categories=Category.query.all(),
+                           q=q, cat_id=cat_id, city=city, country=country, subcategory=subcategory,
+                           price_min=price_min, price_max=price_max, state=state, pagination=pagination)
 
 
 @app.route('/categorie/<slug>')
 def category_page(slug):
     cat = Category.query.filter_by(slug=slug).first_or_404()
     page = request.args.get('page', 1, type=int)
-    per_page = 20
-    pagination = Annonce.query.filter_by(category_id=cat.id, is_active=True)\
-        .order_by(Annonce.is_boosted.desc(), Annonce.created_at.desc())\
-        .paginate(page=page, per_page=per_page, error_out=False)
-    categories = Category.query.all()
-    return render_template('search.html', annonces=pagination.items, categories=categories,
-                           cat_id=cat.id, q='', city='', price_min=None,
-                           price_max=None, state='', current_cat=cat, pagination=pagination)
+    country = request.args.get('country', '').strip()
+    subcategory = request.args.get('subcategory', '').strip()
+    q = Annonce.query.filter_by(category_id=cat.id, is_active=True)
+    if country:
+        q = q.filter_by(country=country)
+    if subcategory:
+        q = q.filter_by(subcategory=subcategory)
+    pagination = q.order_by(Annonce.is_boosted.desc(), Annonce.created_at.desc())\
+        .paginate(page=page, per_page=20, error_out=False)
+    return render_template('search.html', annonces=pagination.items, categories=Category.query.all(),
+                           cat_id=cat.id, q='', city='', country=country, subcategory=subcategory,
+                           price_min=None, price_max=None, state='', current_cat=cat, pagination=pagination)
 
 
 # ═══ INIT DB ═══
@@ -804,12 +1051,10 @@ def init_db():
         for name, icon, slug in cats:
             db.session.add(Category(name=name, icon=icon, slug=slug))
         db.session.commit()
-
-    # Create admin if not exists
     if not User.query.filter_by(is_admin=True).first():
         admin = User(username='admin', email='admin@i-prodif.com',
-                     avatar_color='#e63946', is_admin=True)
-        admin.set_password('admin123')
+                     avatar_color='#e63946', is_admin=True, email_verified=True)
+        admin.set_password(os.environ.get('ADMIN_PASSWORD', 'admin123'))
         db.session.add(admin)
         db.session.commit()
 
